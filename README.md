@@ -1,6 +1,11 @@
 # React Video Editor (Open Source Edition)
 
-**Note:** The active repository for this project has been moved to [reactvideoeditor/free-react-video-editor](https://github.com/reactvideoeditor/free-react-video-editor). Please visit this link for the latest updates, contributions, and issues.
+> **Important Notice:**  
+> The active repository for this project has been moved to  
+> 👉 **[reactvideoeditor/free-react-video-editor](https://github.com/reactvideoeditor/free-react-video-editor)** 👈  
+> Please visit the new repository for the **latest updates**, **contributions**, and **issues**.
+
+---
 
 A free, open-source basic video editor example that runs directly in your web browser. This project serves as a foundation for video editing capabilities and is a simplified version of the full-featured [React Video Editor](https://www.reactvideoeditor.com/).
 
