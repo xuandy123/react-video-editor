@@ -12,16 +12,8 @@ export default function Banner() {
             <Sparkles size={16} className="text-white" />
             <span className="sr-only">Sparkles icon</span>
           </span>
-          <span className="font-medium">
-            Upgrade to the Pro version of{" "}
-            <a
-              target="_blank"
-              href="https://www.reactvideoeditor.com/"
-              className="inline font-bold text-blue-500 underline underline-offset-2 decoration-blue-500 decoration-solid hover:no-underline"
-            >
+          <span className="font-medium">        
               React Video Editor
-            </a>{" "}
-            for advanced features and support!
           </span>
         </p>
       </div>

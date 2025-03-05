@@ -2,10 +2,10 @@
 
 import React, { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { Player, PlayerRef } from "@remotion/player";
-import { Sequence, Video, interpolate, useCurrentFrame } from "remotion";
+import { Sequence, Video, interpolate, useCurrentFrame,  Audio, staticFile } from "remotion";
 import { LetterText, Plus, Text } from "lucide-react";
-
-import { Clip, TextOverlay } from "@/types/types";
+import { getAudioDurationInSeconds } from "@remotion/media-utils";
+import { Clip, TextOverlay, Sound } from "@/types/types";
 
 /**
  * TimelineMarker Component
@@ -25,7 +25,7 @@ const TimelineMarker: React.FC<{
       style={{
         left: markerPosition,
         transform: "translateX(-50%)",
-        height: "100px",
+        height: "120px",
         top: "0px",
       }}
     >
@@ -44,68 +44,54 @@ const ReactVideoEditor: React.FC = () => {
   // State management
   const [clips, setClips] = useState<Clip[]>([]);
   const [textOverlays, setTextOverlays] = useState<TextOverlay[]>([]);
+  const [audioOverlays, setAudioOverlays] = useState<Sound[]>([]);
   const [totalDuration, setTotalDuration] = useState(1);
   const [currentFrame, setCurrentFrame] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
+  const [fps, setFps] = useState(30);
 
   // Refs
   const playerRef = useRef<PlayerRef>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
+  const hasInitialized = useRef(false);
 
-  /**
-   * Adds a new clip to the timeline
-   */
-  const addClip = () => {
-    const lastItem = [...clips, ...textOverlays].reduce(
-      (latest, item) =>
-        item.start + item.duration > latest.start + latest.duration
-          ? item
-          : latest,
-      { start: 0, duration: 0 }
-    );
-
-    const newClip: Clip = {
-      id: `clip-${clips.length + 1}`,
-      start: lastItem.start + lastItem.duration,
-      duration: 300,
-      src: "https://hgwavsootdmvmjdvfiwc.supabase.co/storage/v1/object/public/clips/reactvideoeditor-quality.mp4?t=2024-09-03T02%3A09%3A02.395Z",
-      row: 0,
-    };
-
-    setClips([...clips, newClip]);
-    updateTotalDuration([...clips, newClip], textOverlays);
-  };
 
   /**
    * Adds a new text overlay to the timeline
    */
-  const addTextOverlay = () => {
-    const lastItem = [...clips, ...textOverlays].reduce(
+ const addTextOverlay = (redditText: { text: string; duration: number }) => {
+  setTextOverlays((prevTextOverlays) => {
+    const lastItem = prevTextOverlays.reduce(
       (latest, item) =>
-        item.start + item.duration > latest.start + latest.duration
-          ? item
-          : latest,
+        item.start + item.duration > latest.start + latest.duration ? item : latest,
       { start: 0, duration: 0 }
     );
 
+    console.log(redditText, lastItem);
+
     const newOverlay: TextOverlay = {
-      id: `text-${textOverlays.length + 1}`,
+      id: `text-${prevTextOverlays.length + 1}`,
       start: lastItem.start + lastItem.duration,
-      duration: 100,
-      text: `Text ${textOverlays.length + 1}`,
-      row: 0,
+      duration: redditText.duration,
+      text: redditText.text,
+      row: 1,
     };
 
-    setTextOverlays([...textOverlays, newOverlay]);
-    updateTotalDuration(clips, [...textOverlays, newOverlay]);
-  };
+    const updatedOverlays = [...prevTextOverlays, newOverlay];
+
+    updateTotalDuration(clips, updatedOverlays, audioOverlays);
+
+    return updatedOverlays;
+  });
+};
 
   /**
    * Updates the total duration of the composition based on clips and text overlays
    */
   const updateTotalDuration = (
     updatedClips: Clip[],
-    updatedTextOverlays: TextOverlay[]
+    updatedTextOverlays: TextOverlay[],
+    updatedAudioOverlays: Sound[],
   ) => {
     const lastClipEnd = updatedClips.reduce(
       (max, clip) => Math.max(max, clip.start + clip.duration),
@@ -115,43 +101,112 @@ const ReactVideoEditor: React.FC = () => {
       (max, overlay) => Math.max(max, overlay.start + overlay.duration),
       0
     );
+    const lastAudioEnd = updatedAudioOverlays.reduce(
+      (max, audio) => Math.max(max, audio.start + audio.duration),
+      0
+    );
 
-    const newTotalDuration = Math.max(lastClipEnd, lastTextOverlayEnd);
+    const newTotalDuration = Math.max(lastClipEnd, lastTextOverlayEnd, lastAudioEnd);
     setTotalDuration(newTotalDuration);
   };
 
   /**
    * Composition component for Remotion Player
    */
-  const Composition = useCallback(
-    () => (
-      <>
-        {[...clips, ...textOverlays]
-          .sort((a, b) => a.start - b.start)
-          .map((item) => (
-            <Sequence
-              key={item.id}
-              from={item.start}
-              durationInFrames={item.duration}
-            >
-              {"src" in item ? (
-                <Video src={item.src} />
-              ) : (
-                <TextOverlayComponent text={item.text} />
-              )}
-            </Sequence>
-          ))}
-      </>
-    ),
-    [clips, textOverlays]
-  );
+ const Composition = useCallback(() => (
+  <>
+    {[...clips]
+      .sort((a, b) => a.start - b.start)
+      .map((item) => (
+        <Sequence
+          key={`clip-${item.id}`}
+          from={item.start}
+          durationInFrames={item.duration}
+        >
+          <Video src={item.src} muted={true} />
+        </Sequence>
+      ))}
+
+    {[...textOverlays]
+      .sort((a, b) => a.start - b.start)
+      .map((item) => (
+        <Sequence
+          key={`text-${item.id}`}
+          from={item.start}
+          durationInFrames={item.duration}
+        >
+          <TextOverlayComponent text={item.text} />
+        </Sequence>
+      ))}
+
+      {[...audioOverlays].sort((a, b) => a.start - b.start).map((item) => (
+        <Sequence
+          key={`audio-${item.id}`}
+          from={item.start}
+          durationInFrames={item.duration}
+        >
+          <Audio src={item.file} />
+        </Sequence>
+      ))}
+  </>
+
+), [clips, textOverlays, audioOverlays]);
+
+  /**
+   * Adds a new clip to the timeline
+   */
+  const addClip = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files[0]) {
+
+      const lastItem = [...clips].reduce(
+        (latest, item) =>
+          item.start + item.duration > latest.start + latest.duration
+            ? item
+            : latest,
+        { start: 0, duration: 0 }
+      );
+
+
+      const fileURL = URL.createObjectURL(event.target.files[0]);
+      const newClip: Clip = {
+        id: `clip-${clips.length + 1}`,
+        start: lastItem.start + lastItem.duration,
+        duration: 600,
+        src: fileURL,
+        row: 0,
+      };
+  
+      setClips([...clips, newClip]);
+      updateTotalDuration([...clips, newClip], textOverlays, audioOverlays);
+    }
+  };
+
+
+  const addAudio = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files[0]) {
+      const fileURL = URL.createObjectURL(event.target.files[0]);
+      const duration = await getAudioDurationInSeconds(fileURL);
+      console.log(duration, 'duration')
+      const newAudio: Sound = {
+        id: `audio-${audioOverlays.length + 1}`,
+        start: 0,
+        duration: Math.round(duration * 30),
+        file: fileURL,
+        row: 2,
+        content: "audio",
+      };
+      setAudioOverlays([...audioOverlays, newAudio]);
+      updateTotalDuration(clips, textOverlays, [...audioOverlays, newAudio]);
+    }
+  };
+
 
   /**
    * TimelineItem component for rendering clips and text overlays on the timeline
    */
   const TimelineItem: React.FC<{
-    item: Clip | TextOverlay;
-    type: "clip" | "text";
+    item: Clip | TextOverlay | Sound;
+    type: "clip" | "text" | "audio";
     index: number;
   }> = ({ item, type, index }) => {
     const bgColor =
@@ -159,7 +214,9 @@ const ReactVideoEditor: React.FC = () => {
         ? "bg-indigo-500 to-indigo-400"
         : type === "text"
         ? "bg-purple-500 to-purple-400"
-        : "bg-green-500 to-green-400";
+        : type === "audio"
+        ? "bg-green-500 to-green-400"
+        : "";
 
     return (
       <div
@@ -189,7 +246,7 @@ const ReactVideoEditor: React.FC = () => {
           setCurrentFrame(frame);
         }
       }
-    }, 1000 / 30);
+    }, 1000 / fps);
 
     return () => clearInterval(interval);
   }, []);
@@ -205,6 +262,21 @@ const ReactVideoEditor: React.FC = () => {
 
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  useEffect(() => {
+    
+    if (hasInitialized.current) return; // Prevents second execution  
+    hasInitialized.current = true; // Set flag  
+  
+    const redditText = [
+      { text: "hello world", duration: 100 },
+      { text: "bye world", duration: 100 }
+    ];
+  
+    redditText.forEach(addTextOverlay); // Add text overlays
+  
+  }, []); // Empty dependency array ensures this only runs on mount
+  
 
   // Render mobile view message if on a mobile device
   if (isMobile) {
@@ -239,13 +311,14 @@ const ReactVideoEditor: React.FC = () => {
                 compositionWidth={1920}
                 compositionHeight={1080}
                 controls
-                fps={30}
+                fps={fps}
                 style={{
                   width: "100%",
                   height: "100%",
                 }}
                 renderLoading={() => <div>Loading...</div>}
                 inputProps={{}}
+                acknowledgeRemotionLicense
               />
             </div>
           </div>
@@ -253,23 +326,32 @@ const ReactVideoEditor: React.FC = () => {
       </div>
 
       {/* Timeline section */}
-      <div className="h-32 bg-gray-900 w-full overflow-hidden flex flex-col border border-gray-700 rounded-b-md">
+      <div className="h-60 bg-gray-900 w-full overflow-hidden flex flex-col border border-gray-700 rounded-b-md">
         {/* Timeline controls */}
         <div className="flex justify-between items-center border-b border-gray-700 p-4">
           <div className="flex items-center space-x-4">
             <button
-              onClick={addClip}
+              onClick={() => document.getElementById("videoInput")?.click()}
               className="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-md transition-colors duration-200 flex items-center space-x-2"
             >
               <Plus className="h-5 w-5" />
               <span className="text-sm font-medium">Add Clip</span>
             </button>
+            <input id="videoInput" type="file" accept="video/*" onChange={addClip} className="hidden"/> 
             <button
-              onClick={addTextOverlay}
+              onClick={() => addTextOverlay({text: "hello world", duration: 100})}
               className="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-md transition-colors duration-200 flex items-center space-x-2"
             >
               <LetterText className="h-5 w-5" />
               <span className="text-sm font-medium">Add Text</span>
+            </button>
+            <input id="audioInput" type="file" accept="audio/mp3" onChange={addAudio} className="hidden"/> 
+            <button
+              onClick={() => document.getElementById("audioInput")?.click()}
+              className="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-md transition-colors duration-200 flex items-center space-x-2"
+            >
+              <LetterText className="h-5 w-5" />
+              <span className="text-sm font-medium">Add Audio</span>
             </button>
           </div>
         </div>
@@ -280,7 +362,7 @@ const ReactVideoEditor: React.FC = () => {
           className="bg-gray-800 rounded-lg shadow-inner relative"
         >
           <div className="absolute inset-0">
-            <div className="top-10 left-0 right-0 bottom-0 overflow-x-auto overflow-y-visible p-2">
+            <div className="top-10 left-0 right-0 bottom-0 p-2">
               <div
                 className="gap-4"
                 style={{
@@ -307,6 +389,14 @@ const ReactVideoEditor: React.FC = () => {
                     key={overlay.id}
                     item={overlay}
                     type="text"
+                    index={index}
+                  />
+                ))}
+                {audioOverlays.map((sound, index) => (
+                  <TimelineItem
+                    key={sound.id}
+                    item={sound}
+                    type="audio"
                     index={index}
                   />
                 ))}
